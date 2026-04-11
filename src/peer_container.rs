@@ -179,6 +179,9 @@ pub trait PeerHandler {
     ) -> Result<Vec<Effect>, Error> {
         Ok(vec![])
     }
+    fn add_game(&mut self, _game_type: GameType, _factory: GameFactory) {
+        // Default: silently ignored in phases that don't support it.
+    }
     fn channel_handler(&self) -> Result<&ChannelHandler, Error> {
         Err(Error::StrErr(
             "no channel handler in this phase".to_string(),
@@ -751,6 +754,10 @@ impl SynchronousGameCradle {
                 Error::StrErr("force_stale_unroll_spend: not a PotatoHandler".to_string())
             })?;
         ph.force_stale_unroll_spend(&mut env, saved)
+    }
+
+    pub fn add_game(&mut self, game_type: GameType, factory: GameFactory) {
+        self.peer.add_game(game_type, factory);
     }
 
     pub fn amount(&self) -> Amount {

@@ -697,6 +697,9 @@ impl PeerHandler for HandshakeInitiatorHandler {
     fn take_replacement(&mut self) -> Option<Box<dyn PeerHandler>> {
         self.replacement.take().map(|ph| ph as Box<dyn PeerHandler>)
     }
+    fn add_game(&mut self, game_type: GameType, factory: GameFactory) {
+        self.game_types.insert(game_type, factory);
+    }
     fn new_block(&mut self, height: u64) -> Result<Vec<Effect>, Error> {
         self.last_height = height;
         if self.pending_coin_spend && self.last_height > 0 {

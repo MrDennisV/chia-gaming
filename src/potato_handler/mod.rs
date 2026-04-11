@@ -1702,6 +1702,9 @@ impl PeerHandler for PotatoHandler {
     fn shut_down(&mut self, env: &mut ChannelHandlerEnv<'_>) -> Result<Vec<Effect>, Error> {
         <Self as FromLocalUI>::shut_down(self, env)
     }
+    fn add_game(&mut self, game_type: GameType, factory: GameFactory) {
+        self.game_types.insert(game_type, factory);
+    }
     fn go_on_chain(
         &mut self,
         env: &mut ChannelHandlerEnv<'_>,

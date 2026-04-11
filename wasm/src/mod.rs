@@ -561,6 +561,18 @@ mod gaming_wasm {
     }
 
     #[wasm_bindgen]
+    pub fn add_game(cid: i32, game_name: &str, hex_program: &str, parser_hex: &str) -> Result<(), JsValue> {
+        with_game(cid, move |cradle: &mut JsCradle| {
+            let (game_type, factory) = convert_game_factory(game_name, &JsGameFactory {
+                hex: hex_program.to_string(),
+                parser_hex: if parser_hex.is_empty() { None } else { Some(parser_hex.to_string()) },
+            }).map_err(|e| types::Error::StrErr(format!("{e:?}")))?;
+            cradle.cradle.add_game(game_type, factory);
+            Ok(())
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn start_handshake(cid: i32) -> Result<JsValue, JsValue> {
         with_game_drain(cid, move |cradle: &mut JsCradle| {
             cradle.cradle.start_handshake(&mut cradle.allocator)
