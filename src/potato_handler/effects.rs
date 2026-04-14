@@ -124,7 +124,19 @@ pub enum GameNotification {
         my_contribution: Amount,
         their_contribution: Amount,
         initial_validation_program_hash: Hash,
+        /// Name of the game type declared by the proposer (e.g. "calpoker").
+        /// Labeled by the proposer — NOT trustworthy on its own. Consumers
+        /// should combine it with `factory_hash` to verify against a known
+        /// source (marketplace, permit-list).
         game_type: GameType,
+        /// sha256(program || parser_or_empty) computed by the framework
+        /// unilaterally from the bytes in the wire payload. Does NOT travel
+        /// as a declared field on the wire — each side computes its own
+        /// copy from the bytes it actually holds. Consumers can display
+        /// this in UI or query a marketplace (`/factories/{hash}`) to
+        /// verify author / version / signature before accepting the
+        /// proposal.
+        factory_hash: Hash,
     },
     ProposalAccepted {
         id: GameID,

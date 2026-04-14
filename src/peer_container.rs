@@ -138,6 +138,7 @@ pub trait PeerHandler {
         &mut self,
         _env: &mut ChannelHandlerEnv<'_>,
         _game: &GameStart,
+        _factory: GameFactory,
     ) -> Result<(Vec<GameID>, Vec<Effect>), Error> {
         Err(Error::StrErr(
             "propose_game: not in off-chain phase".to_string(),
@@ -341,10 +342,17 @@ pub trait GameCradle {
 
     /// Propose a new game. The game enters the proposed state and is
     /// communicated to the peer as metadata (no unroll/balance impact).
+    ///
+    /// `factory` is the program + parser the proposer is using this
+    /// session. It is registered locally on the proposer side and
+    /// travels in the wire message so the receiver auto-registers
+    /// without a prior `add_game` call. See the PR description on
+    /// propose_game for the full motivation.
     fn propose_game(
         &mut self,
         allocator: &mut AllocEncoder,
         game: &GameStart,
+        factory: GameFactory,
     ) -> Result<Vec<GameID>, Error>;
 
     /// Explicitly accept a proposed game. Moves it from proposed to live,
@@ -1313,10 +1321,11 @@ impl GameCradle for SynchronousGameCradle {
         &mut self,
         allocator: &mut AllocEncoder,
         game: &GameStart,
+        factory: GameFactory,
     ) -> Result<Vec<GameID>, Error> {
         let (result, reported_effects) = {
             let mut env = ChannelHandlerEnv::new(allocator)?;
-            self.peer.propose_game(&mut env, game)?
+            self.peer.propose_game(&mut env, game, factory)?
         };
         self.process_effects(reported_effects, allocator)?;
         Ok(result)

@@ -561,6 +561,12 @@ mod gaming_wasm {
         })
     }
 
+    /// Pre-register a game factory on this cradle.
+    ///
+    /// **Optional** since the propose_game wire message carries the
+    /// factory and auto-registers on both sides. Useful as a precache
+    /// for frequently-played games (avoids sending the ~85 KB factory
+    /// hex on every propose).
     #[wasm_bindgen]
     pub fn add_game(cid: i32, game_name: &str, hex_program: &str, parser_hex: &str) -> Result<(), JsValue> {
         with_game(cid, move |cradle: &mut JsCradle| {
@@ -854,12 +860,20 @@ mod gaming_wasm {
 
     #[derive(Deserialize)]
     struct JsGameStart {
-        // Game name
+        // Game name (hex-encoded bytes of the type label)
         game_type: String,
         timeout: u64,
         amount: u64,
         my_contribution: u64,
         my_turn: bool,
+        /// Proposer-side: hex of the make_proposal program the proposer
+        /// is playing with. Travels in the wire so the receiver
+        /// auto-registers without a prior add_game call. See the
+        /// propose_game commit PR description.
+        program_hex: String,
+        /// Proposer-side: hex of the parser program, or empty string
+        /// if the game doesn't use a parser.
+        parser_hex: String,
     }
 
     fn game_id_to_string(id: &GameID) -> String {
@@ -872,14 +886,45 @@ mod gaming_wasm {
         })?))
     }
 
+    /// Propose a new game.
+    ///
+    /// `game.program_hex` and `game.parser_hex` are REQUIRED — they
+    /// carry the bytes of the factory the proposer is playing with,
+    /// which the framework registers locally and embeds in the wire
+    /// so the receiver auto-registers. Calling `register_game`
+    /// beforehand is no longer necessary. The receiver will see the
+    /// factory_hash in its GameProposed event and can verify it
+    /// against a marketplace / permit-list.
     #[wasm_bindgen]
     pub fn propose_game(cid: i32, game: JsValue, parameters: &[u8]) -> Result<JsValue, JsValue> {
         let js_game_start =
             serde_wasm_bindgen::from_value::<JsGameStart>(game.clone()).into_js()?;
         let parameters_program = Program::from_bytes(parameters);
         with_game(cid, move |cradle: &mut JsCradle| {
+            let game_type_bytes = hex::decode(&js_game_start.game_type).into_gen()?;
+            // Build the GameFactory from the hex the caller passed in.
+            // Use the game_type label (decoded bytes) as the name for
+            // convert_game_factory — it treats the name string as
+            // `.bytes().collect()`, so we pass its UTF-8 representation
+            // when possible, or reconstruct directly for non-UTF-8
+            // labels.
+            let (_discarded_name, factory) = convert_game_factory(
+                // Name is redundant here; the real game_type comes from
+                // game_type_bytes below. We pass an empty string to
+                // avoid surprises if the label isn't valid UTF-8.
+                "",
+                &JsGameFactory {
+                    hex: js_game_start.program_hex.clone(),
+                    parser_hex: if js_game_start.parser_hex.is_empty() {
+                        None
+                    } else {
+                        Some(js_game_start.parser_hex.clone())
+                    },
+                },
+            )
+            .map_err(|e| types::Error::StrErr(format!("{e:?}")))?;
             let game_start = GameStart {
-                game_type: GameType(js_game_start.game_type.as_bytes().to_vec()),
+                game_type: GameType(game_type_bytes),
                 timeout: Timeout::new(js_game_start.timeout),
                 amount: Amount::new(js_game_start.amount),
                 my_contribution: Amount::new(js_game_start.my_contribution),
@@ -893,6 +938,7 @@ mod gaming_wasm {
             let ids = cradle.cradle.propose_game(
                 &mut cradle.allocator,
                 &game_start,
+                factory,
             )?;
             let dr = cradle
                 .cradle

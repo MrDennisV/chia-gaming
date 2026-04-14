@@ -1528,6 +1528,15 @@ fn run_game_container_with_action_list_with_success_predicate(
                     GameAction::ProposeNewGame(who, _trigger)
                     | GameAction::ProposeNewGameTheirTurn(who, _trigger) => {
                         let my_turn = matches!(ga, GameAction::ProposeNewGame(_, _));
+                        let factory = game_type_map
+                            .get(&GameType(game_type.to_vec()))
+                            .cloned()
+                            .ok_or_else(|| {
+                                Error::StrErr(format!(
+                                    "game_type {:?} not in game_type_map",
+                                    game_type
+                                ))
+                            })?;
                         let new_ids = cradles[*who].propose_game(
                             allocator,
                             &GameStart {
@@ -1542,6 +1551,7 @@ fn run_game_container_with_action_list_with_success_predicate(
                                 initial_max_move_size: None,
                                 initial_mover_share: None,
                             },
+                            factory,
                         )?;
                         local_uis[*who]
                             .proposed_game_ids
@@ -3483,6 +3493,10 @@ pub fn test_funs() -> Vec<(&'static str, &'static (dyn Fn() + Send + Sync))> {
         .expect("should finish");
 
         let borrowed: &Program = sim_setup.args_program.borrow();
+        let debug_factory = poker_collection(&mut allocator)
+            .get(&GameType(game_type.to_vec()))
+            .cloned()
+            .expect("debug game in poker_collection");
         let result1 = outcome.cradles[0].propose_game(
             &mut allocator,
             &GameStart {
@@ -3497,6 +3511,7 @@ pub fn test_funs() -> Vec<(&'static str, &'static (dyn Fn() + Send + Sync))> {
                 initial_max_move_size: None,
                 initial_mover_share: None,
             },
+            debug_factory.clone(),
         );
 
         assert!(result1.is_ok());
@@ -3515,6 +3530,7 @@ pub fn test_funs() -> Vec<(&'static str, &'static (dyn Fn() + Send + Sync))> {
                 initial_max_move_size: None,
                 initial_mover_share: None,
             },
+            debug_factory,
         );
 
         for _i in 0..100 {

@@ -21,6 +21,15 @@ pub struct WireProposeGame {
     pub start: GameStart,
     pub game_id: GameID,
     pub start_index: usize,
+    /// The full game factory (program + optional parser) the proposer is
+    /// using for this session. Travels on the wire so the receiver can
+    /// register-or-replace its local `game_types` entry for the game_type
+    /// named in `start.game_type` without requiring a prior out-of-band
+    /// `add_game` call. Combined with `factory_hash` surfaced in the
+    /// `GameNotification::GameProposed` event, the receiver's consumer
+    /// can verify the program against a marketplace or permit-list
+    /// before accepting.
+    pub factory: GameFactory,
 }
 
 /// Async interface implemented by Peer to receive notifications about wallet
@@ -106,10 +115,19 @@ pub trait ToLocalUI {
 }
 
 pub trait FromLocalUI {
+    /// Propose a new game to the peer.
+    ///
+    /// `factory` carries the program + parser this session will play
+    /// against. It is (a) inserted into `self.game_types` unconditionally
+    /// (register-or-replace), and (b) embedded in the wire message so
+    /// the receiver auto-registers without a prior `add_game` call.
+    /// See `WireProposeGame::factory` and the PR description for the
+    /// full motivation.
     fn propose_game(
         &mut self,
         env: &mut ChannelHandlerEnv<'_>,
         game: &GameStart,
+        factory: GameFactory,
     ) -> Result<(Vec<GameID>, Vec<Effect>), Error>;
 
     fn accept_proposal(
@@ -249,6 +267,13 @@ pub struct GameFactory {
 pub struct PotatoHandlerInit {
     pub have_potato: bool,
     pub private_keys: ChannelHandlerPrivateKeys,
+    /// Optional pre-registration cache for game factories. Apps may
+    /// pass `BTreeMap::new()` here and rely entirely on the wire
+    /// proposal carrying the factory (see `WireProposeGame::factory`
+    /// and `PotatoHandler::propose_game` which accepts a factory and
+    /// registers it as a side-effect). This map remains useful as a
+    /// precache for frequently-played games, but is no longer the
+    /// only path to make a game_type playable.
     pub game_types: BTreeMap<GameType, GameFactory>,
     pub my_contribution: Amount,
     pub their_contribution: Amount,

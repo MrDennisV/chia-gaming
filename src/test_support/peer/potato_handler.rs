@@ -568,6 +568,10 @@ pub fn test_peer_smoke() {
             let mut env = ChannelHandlerEnv::new(&mut allocator).expect("should work");
 
             let nil = Program::from_hex("80").unwrap();
+            let factory = game_type_map
+                .get(&GameType(b"ca1poker".to_vec()))
+                .cloned()
+                .expect("ca1poker should be in poker_collection");
             let (game_ids, effects1) = FromLocalUI::propose_game(
                 &mut peers[1],
                 &mut env,
@@ -583,6 +587,7 @@ pub fn test_peer_smoke() {
                     initial_max_move_size: None,
                     initial_mover_share: None,
                 },
+                factory,
             )
             .expect("should run");
             (game_ids, effects1)
