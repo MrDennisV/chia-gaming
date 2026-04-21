@@ -189,6 +189,14 @@ pub trait PeerHandler {
         ))
     }
 
+    fn on_chain_handler(
+        &self,
+    ) -> Result<&crate::potato_handler::on_chain::OnChainGameHandler, Error> {
+        Err(Error::StrErr(
+            "on_chain_handler: not in on-chain phase".to_string(),
+        ))
+    }
+
     fn channel_status_snapshot(&self) -> Option<ChannelStatusSnapshot> {
         None
     }
@@ -805,6 +813,68 @@ impl SynchronousGameCradle {
 
     pub fn get_watching_coins(&self) -> Vec<CoinString> {
         self.state.watching_coins.keys().cloned().collect()
+    }
+
+    /// Return a single atomic snapshot of cradle state suitable for
+    /// cheap UI reads. Reads only cached in-memory state — no
+    /// allocator, no serialization round-trip. See `CradleSummary`
+    /// for the returned shape.
+    pub fn get_summary(&self) -> crate::cradle_summary::CradleSummary {
+        use crate::cradle_summary::{
+            CradleSummary, LiveGameSummary, OnChainGameSummary, PendingProposalSummary,
+            UnrollCoinSummary, WatchingCoinSummary,
+        };
+
+        let channel_handler = self.peer.channel_handler().ok();
+        let on_chain_handler = self.peer.on_chain_handler().ok();
+
+        // Source of truth for live_games differs by phase: pre-unroll it
+        // lives on the ChannelHandler, post-unroll it migrates to the
+        // OnChainGameHandler. Consumer-visible shape is identical.
+        let live_games: Vec<LiveGameSummary> = channel_handler
+            .map(|ch| ch.live_games())
+            .or_else(|| on_chain_handler.map(|h| h.live_games()))
+            .map(|games| games.iter().map(LiveGameSummary::from_live_game).collect())
+            .unwrap_or_default();
+
+        let on_chain_games: Vec<OnChainGameSummary> = on_chain_handler
+            .map(|h| {
+                h.game_map()
+                    .iter()
+                    .map(|(coin, state)| OnChainGameSummary::from_parts(coin, state))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let pending_proposals: Vec<PendingProposalSummary> = channel_handler
+            .map(|ch| {
+                ch.proposed_games()
+                    .iter()
+                    .map(|p| PendingProposalSummary::from_proposed_game(ch, p))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let unroll_coin =
+            channel_handler.map(|ch| UnrollCoinSummary::from_unroll(&ch.unroll_spend_info().coin));
+
+        CradleSummary {
+            channel: self.last_channel_status.clone(),
+            state_number: channel_handler.map(|ch| ch.state_number()),
+            signed_state_number: channel_handler.and_then(|ch| ch.timeout_state_number()),
+            have_potato: channel_handler.map(|ch| ch.have_potato()).unwrap_or(false),
+            unroll_coin,
+            pending_proposals,
+            live_games,
+            on_chain_games,
+            watching_coins: self
+                .state
+                .watching_coins
+                .iter()
+                .map(|(coin, entry)| WatchingCoinSummary::from_parts(coin, entry))
+                .collect(),
+            current_height: self.state.current_height,
+        }
     }
 
     pub fn provide_launcher_coin(

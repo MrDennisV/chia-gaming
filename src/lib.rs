@@ -7,6 +7,7 @@
 #[macro_use]
 pub mod common;
 pub mod channel_handler;
+pub mod cradle_summary;
 pub mod games;
 /// Provides as simple as possible a full blockchain interface that can be spoken
 /// with via a trait interface that's either local and synchronous or over a pipe.

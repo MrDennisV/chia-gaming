@@ -350,6 +350,14 @@ impl OnChainGameHandler {
         self.game_map.is_empty()
     }
 
+    pub fn game_map(&self) -> &HashMap<CoinString, OnChainGameState> {
+        &self.game_map
+    }
+
+    pub fn live_games(&self) -> &[LiveGame] {
+        &self.live_games
+    }
+
     // --- Methods moved from ChannelHandler ---
 
     fn save_game_state(&self, game_id: &GameID) -> Result<(Rc<Referee>, PuzzleHash), Error> {
@@ -1735,6 +1743,10 @@ impl PeerHandler for OnChainGameHandler {
 
     fn take_replacement(&mut self) -> Option<Box<dyn PeerHandler>> {
         None
+    }
+
+    fn on_chain_handler(&self) -> Result<&OnChainGameHandler, Error> {
+        Ok(self)
     }
 
     fn channel_status_snapshot(&self) -> Option<ChannelStatusSnapshot> {

@@ -27,10 +27,6 @@ mod gaming_wasm {
         Puzzle, PuzzleHash, Sha256Input, Spend, SpendBundle, Timeout,
     };
 
-    use chia_protocol::SpendBundle as ProtocolSpendBundle;
-    use chia_traits::Streamable;
-    use flate2::Decompress;
-    use flate2::FlushDecompress;
     use chia_gaming::peer_container::{
         GameCradle, SynchronousGameCradle, SynchronousGameCradleConfig, WatchReport,
     };
@@ -39,13 +35,14 @@ mod gaming_wasm {
     use chia_gaming::potato_handler::handshake::{CoinSpendRequest, RawCoinCondition};
     use chia_gaming::potato_handler::start::GameStart;
     use chia_gaming::potato_handler::types::{GameFactory, ToLocalUI};
+    use chia_protocol::SpendBundle as ProtocolSpendBundle;
+    use chia_traits::Streamable;
+    use flate2::Decompress;
+    use flate2::FlushDecompress;
 
     struct NullLocalUI;
     impl ToLocalUI for NullLocalUI {
-        fn notification(
-            &mut self,
-            _notification: &GameNotification,
-        ) -> Result<(), types::Error> {
+        fn notification(&mut self, _notification: &GameNotification) -> Result<(), types::Error> {
             Ok(())
         }
     }
@@ -127,6 +124,77 @@ mod gaming_wasm {
     };
 
     export type IChiaIdentityFun = (seed: string) => IChiaIdentity;
+
+    /** Snapshot of cradle state returned by `get_cradle_summary`.
+     *  `channel.coin` is a Uint8Array (inherits from the existing
+     *  ChannelStatus event). Other `*_string` / `*_hash` fields are
+     *  hex strings. Amount-typed fields are plain numbers. */
+    export type CradleSummary = {
+        "channel": ChannelStatusSnapshot | null,
+        "state_number": number | null,
+        "signed_state_number": number | null,
+        "have_potato": boolean,
+        "unroll_coin": UnrollCoinSummary | null,
+        "pending_proposals": Array<PendingProposalSummary>,
+        "live_games": Array<LiveGameSummary>,
+        "on_chain_games": Array<OnChainGameSummary>,
+        "watching_coins": Array<WatchingCoinSummary>,
+        "current_height": number,
+    };
+
+    export type ChannelStatusSnapshot = {
+        "state": string,
+        "advisory": string | null,
+        "coin": Uint8Array | null,
+        "our_balance": number | null,
+        "their_balance": number | null,
+        "game_allocated": number | null,
+    };
+
+    export type UnrollCoinSummary = {
+        "state_number": number,
+        "conditions_hash": string | null,
+    };
+
+    export type PendingProposalSummary = {
+        "game_id": number,
+        "my_contribution": number,
+        "their_contribution": number,
+        "amount": number,
+        "proposed_by_us": boolean,
+        "is_my_turn": boolean,
+    };
+
+    export type LiveGameSummary = {
+        "game_id": number,
+        "last_referee_puzzle_hash": string,
+        "my_contribution": number,
+        "their_contribution": number,
+        "our_current_share": number | null,
+        "their_current_share": number | null,
+        "max_move_size": number,
+        "is_my_turn": boolean,
+        "is_game_over": boolean,
+        "game_timeout": number,
+    };
+
+    export type OnChainGameSummary = {
+        "game_id": number,
+        "coin_string": string,
+        "puzzle_hash": string,
+        "state_number": number,
+        "our_turn": boolean,
+        "game_timeout": number,
+        "accepted": boolean,
+        "pending_slash_amount": number | null,
+    };
+
+    export type WatchingCoinSummary = {
+        "coin_id": string,
+        "coin_string": string,
+        "timeout_blocks": number,
+        "name": string | null,
+    };
     "#;
 
     #[derive(Serialize, Deserialize, Default, Debug)]
@@ -555,9 +623,7 @@ mod gaming_wasm {
     pub fn opening_coin(cid: i32, hex_coinstring: &str) -> Result<JsValue, JsValue> {
         let coin = hex_to_coinstring(hex_coinstring).into_js()?;
         with_game_drain(cid, move |cradle: &mut JsCradle| {
-            cradle
-                .cradle
-                .opening_coin(&mut cradle.allocator, coin)
+            cradle.cradle.opening_coin(&mut cradle.allocator, coin)
         })
     }
 
@@ -568,12 +634,25 @@ mod gaming_wasm {
     /// for frequently-played games (avoids sending the ~85 KB factory
     /// hex on every propose).
     #[wasm_bindgen]
-    pub fn add_game(cid: i32, game_name: &str, hex_program: &str, parser_hex: &str) -> Result<(), JsValue> {
+    pub fn add_game(
+        cid: i32,
+        game_name: &str,
+        hex_program: &str,
+        parser_hex: &str,
+    ) -> Result<(), JsValue> {
         with_game(cid, move |cradle: &mut JsCradle| {
-            let (game_type, factory) = convert_game_factory(game_name, &JsGameFactory {
-                hex: hex_program.to_string(),
-                parser_hex: if parser_hex.is_empty() { None } else { Some(parser_hex.to_string()) },
-            }).map_err(|e| types::Error::StrErr(format!("{e:?}")))?;
+            let (game_type, factory) = convert_game_factory(
+                game_name,
+                &JsGameFactory {
+                    hex: hex_program.to_string(),
+                    parser_hex: if parser_hex.is_empty() {
+                        None
+                    } else {
+                        Some(parser_hex.to_string())
+                    },
+                },
+            )
+            .map_err(|e| types::Error::StrErr(format!("{e:?}")))?;
             cradle.cradle.add_game(game_type, factory);
             Ok(())
         })
@@ -640,10 +719,10 @@ mod gaming_wasm {
     const LATEST_OFFER_VERSION: u16 = 6;
 
     fn zdict_for_version(version: u16) -> Result<Vec<u8>, String> {
-        let legacy_cat = hex::decode(LEGACY_CAT_MOD_HEX)
-            .map_err(|e| format!("bad LEGACY_CAT_MOD hex: {e}"))?;
-        let offer_old = hex::decode(OFFER_MOD_OLD_HEX)
-            .map_err(|e| format!("bad OFFER_MOD_OLD hex: {e}"))?;
+        let legacy_cat =
+            hex::decode(LEGACY_CAT_MOD_HEX).map_err(|e| format!("bad LEGACY_CAT_MOD hex: {e}"))?;
+        let offer_old =
+            hex::decode(OFFER_MOD_OLD_HEX).map_err(|e| format!("bad OFFER_MOD_OLD hex: {e}"))?;
 
         // ZDICT entries indexed by version-1.
         // Mirrors chia-blockchain/chia/wallet/util/puzzle_compression.py
@@ -652,7 +731,8 @@ mod gaming_wasm {
             &[
                 chia_puzzles::P2_DELEGATED_PUZZLE_OR_HIDDEN_PUZZLE.as_slice(),
                 legacy_cat.as_slice(),
-            ].concat(),
+            ]
+            .concat(),
             // v2: old offer/settlement mod
             &offer_old,
             // v3: singleton + NFT puzzles
@@ -661,8 +741,10 @@ mod gaming_wasm {
                 chia_puzzles::NFT_STATE_LAYER.as_slice(),
                 chia_puzzles::NFT_OWNERSHIP_LAYER.as_slice(),
                 chia_puzzles::NFT_METADATA_UPDATER_DEFAULT.as_slice(),
-                chia_puzzles::NFT_OWNERSHIP_TRANSFER_PROGRAM_ONE_WAY_CLAIM_WITH_ROYALTIES.as_slice(),
-            ].concat(),
+                chia_puzzles::NFT_OWNERSHIP_TRANSFER_PROGRAM_ONE_WAY_CLAIM_WITH_ROYALTIES
+                    .as_slice(),
+            ]
+            .concat(),
             // v4: current CAT puzzle
             chia_puzzles::CAT_PUZZLE.as_slice(),
             // v5: current settlement payment
@@ -711,8 +793,8 @@ mod gaming_wasm {
     }
 
     fn decode_offer_to_spend_bundle(offer_bech32: &str) -> Result<SpendBundle, String> {
-        let (_hrp, raw_bytes) = bech32::decode(offer_bech32)
-            .map_err(|e| format!("bech32m decode error: {e}"))?;
+        let (_hrp, raw_bytes) =
+            bech32::decode(offer_bech32).map_err(|e| format!("bech32m decode error: {e}"))?;
 
         if raw_bytes.len() < 3 {
             return Err(format!("offer data too short ({} bytes)", raw_bytes.len()));
@@ -733,24 +815,37 @@ mod gaming_wasm {
 
         let agg_sig = Aggsig::from_bls(proto_bundle.aggregated_signature);
         let mut first = true;
-        let spends = proto_bundle.coin_spends.into_iter().map(|cs| {
-            let coin_string = CoinString::from_parts(
-                &CoinID::new(Hash::from_slice(cs.coin.parent_coin_info.as_ref())
-                    .expect("parent_coin_info is 32 bytes")),
-                &PuzzleHash::from_hash(Hash::from_slice(cs.coin.puzzle_hash.as_ref())
-                    .expect("puzzle_hash is 32 bytes")),
-                &Amount::new(cs.coin.amount),
-            );
-            let sig = if first { first = false; agg_sig.clone() } else { Aggsig::default() };
-            CoinSpend {
-                coin: coin_string,
-                bundle: Spend {
-                    puzzle: Puzzle::from_bytes(cs.puzzle_reveal.as_ref()),
-                    solution: Program::from_bytes(cs.solution.as_ref()).into(),
-                    signature: sig,
-                },
-            }
-        }).collect();
+        let spends = proto_bundle
+            .coin_spends
+            .into_iter()
+            .map(|cs| {
+                let coin_string = CoinString::from_parts(
+                    &CoinID::new(
+                        Hash::from_slice(cs.coin.parent_coin_info.as_ref())
+                            .expect("parent_coin_info is 32 bytes"),
+                    ),
+                    &PuzzleHash::from_hash(
+                        Hash::from_slice(cs.coin.puzzle_hash.as_ref())
+                            .expect("puzzle_hash is 32 bytes"),
+                    ),
+                    &Amount::new(cs.coin.amount),
+                );
+                let sig = if first {
+                    first = false;
+                    agg_sig.clone()
+                } else {
+                    Aggsig::default()
+                };
+                CoinSpend {
+                    coin: coin_string,
+                    bundle: Spend {
+                        puzzle: Puzzle::from_bytes(cs.puzzle_reveal.as_ref()),
+                        solution: Program::from_bytes(cs.solution.as_ref()).into(),
+                        signature: sig,
+                    },
+                }
+            })
+            .collect();
 
         Ok(SpendBundle { name: None, spends })
     }
@@ -850,11 +945,9 @@ mod gaming_wasm {
     ) -> Result<JsValue, JsValue> {
         let watch_report = watch_report_from_params(additions, removals).into_js()?;
         with_game_drain(cid, move |cradle: &mut JsCradle| {
-            cradle.cradle.new_block(
-                &mut cradle.allocator,
-                height,
-                &watch_report,
-            )
+            cradle
+                .cradle
+                .new_block(&mut cradle.allocator, height, &watch_report)
         })
     }
 
@@ -935,14 +1028,10 @@ mod gaming_wasm {
                 initial_max_move_size: None,
                 initial_mover_share: None,
             };
-            let ids = cradle.cradle.propose_game(
-                &mut cradle.allocator,
-                &game_start,
-                factory,
-            )?;
-            let dr = cradle
+            let ids = cradle
                 .cradle
-                .flush_and_collect(&mut cradle.allocator)?;
+                .propose_game(&mut cradle.allocator, &game_start, factory)?;
+            let dr = cradle.cradle.flush_and_collect(&mut cradle.allocator)?;
 
             let events = collect_drain_events(&dr)?;
             let ids_arr = js_sys::Array::new();
@@ -1027,9 +1116,7 @@ mod gaming_wasm {
                 .map_err(|e| JsValue::from_str(&e.to_string()))?,
         );
         with_game_drain(cid, move |cradle: &mut JsCradle| {
-            cradle
-                .cradle
-                .cheat(&mut cradle.allocator, &game_id, share)
+            cradle.cradle.cheat(&mut cradle.allocator, &game_id, share)
         })
     }
 
@@ -1098,20 +1185,16 @@ mod gaming_wasm {
     #[wasm_bindgen]
     pub fn shut_down(cid: i32) -> Result<JsValue, JsValue> {
         with_game_drain(cid, move |cradle: &mut JsCradle| {
-            cradle
-                .cradle
-                .shut_down(&mut cradle.allocator)
+            cradle.cradle.shut_down(&mut cradle.allocator)
         })
     }
 
     #[wasm_bindgen]
     pub fn go_on_chain(cid: i32) -> Result<JsValue, JsValue> {
         with_game_drain(cid, move |cradle: &mut JsCradle| {
-            cradle.cradle.go_on_chain(
-                &mut cradle.allocator,
-                &mut NullLocalUI,
-                false,
-            )
+            cradle
+                .cradle
+                .go_on_chain(&mut cradle.allocator, &mut NullLocalUI, false)
         })
     }
 
@@ -1140,11 +1223,9 @@ mod gaming_wasm {
         };
 
         with_game_drain(cid, move |cradle: &mut JsCradle| {
-            cradle.cradle.report_puzzle_and_solution(
-                &mut cradle.allocator,
-                &coin,
-                ps_pair,
-            )
+            cradle
+                .cradle
+                .report_puzzle_and_solution(&mut cradle.allocator, &coin, ps_pair)
         })
     }
 
@@ -1353,6 +1434,20 @@ mod gaming_wasm {
     pub fn cradle_amount(cid: i32) -> Result<JsValue, JsValue> {
         let amount = with_game(cid, move |cradle: &mut JsCradle| Ok(cradle.cradle.amount()))?;
         serde_wasm_bindgen::to_value(&JsAmount { amt: amount }).into_js()
+    }
+
+    /// One-shot read of cradle state for cheap UI consumption. Replaces
+    /// the `serialize_cradle` → hex decode → BSON parse pattern used
+    /// today to inspect per-tick fields. Infallible — per-game referee
+    /// errors surface as `null` on their `Option<>` fields rather than
+    /// failing the whole read. See the `CradleSummary` TypeScript type
+    /// for the full shape.
+    #[wasm_bindgen]
+    pub fn get_cradle_summary(cid: i32) -> Result<JsValue, JsValue> {
+        let summary = with_game(cid, move |cradle: &mut JsCradle| {
+            Ok(cradle.cradle.get_summary())
+        })?;
+        serde_wasm_bindgen::to_value(&summary).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     #[wasm_bindgen]

@@ -174,6 +174,18 @@ impl ChannelHandler {
         self.have_potato
     }
 
+    pub fn live_games(&self) -> &[LiveGame] {
+        &self.live_games
+    }
+
+    pub fn proposed_games(&self) -> &[ProposedGame] {
+        &self.proposed_games
+    }
+
+    pub fn unroll_spend_info(&self) -> &ChannelHandlerUnrollSpendInfo {
+        &self.latest_sent_unroll
+    }
+
     /// Corrupt the channel handler's view of state for testing unrecoverable
     /// unroll edge cases.  Sets `state_number` and `latest_sent_unroll.coin.state_number`
     /// to `new_sn`, and clears `latest_received_unroll` and the puzzle hash map so
