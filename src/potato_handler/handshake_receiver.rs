@@ -738,7 +738,10 @@ impl PeerHandler for HandshakeReceiverHandler {
         if let ReceiverState::WaitingForCompletion(_, alice_bundle) = &self.state {
             let mut spends = alice_bundle.spends.clone();
             spends.extend(bundle.spends.clone());
-            let final_bundle = SpendBundle { name: None, spends };
+            let final_bundle = SpendBundle {
+                name: Some("channel funding".to_string()),
+                spends,
+            };
             let completion_effect = self.channel_transaction_completion(env, &final_bundle)?;
             let mut effects = Vec::new();
             effects.extend(completion_effect);

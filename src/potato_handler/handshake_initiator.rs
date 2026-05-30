@@ -793,7 +793,10 @@ impl PeerHandler for HandshakeInitiatorHandler {
             let launcher_spend = self.build_launcher_coin_spend(env)?;
             let mut spends = wallet_bundle.spends;
             spends.push(launcher_spend);
-            SpendBundle { name: None, spends }
+            SpendBundle {
+                name: Some("channel funding".to_string()),
+                spends,
+            }
         } else {
             wallet_bundle
         };
