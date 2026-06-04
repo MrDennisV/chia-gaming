@@ -15,6 +15,11 @@ name = "chia_gaming_wasm"
 crate-type = ["cdylib"]
 path = "src/mod.rs"
 
+[features]
+# Forward to chia_gaming's testnet11 feature so `wasm-pack build
+# --features testnet11` produces a testnet11 blob.
+testnet11 = ["chia_gaming/testnet11"]
+
 [dependencies]
 chia_gaming = { path= "..", features = [] }
 clvmr = { version = "=0.17.5", features = ["pre-eval"] }
