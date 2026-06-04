@@ -16,6 +16,9 @@ repository = "https://github.com/Chia-Network/chia-gaming/"
 sim-tests = []
 sim-server = ["sim-tests", "dep:tiny_http", "dep:tungstenite", "dep:socket2"]
 used_linker = []
+# Build for Chia testnet11 instead of mainnet. Swaps the genesis challenge
+# baked into every AGG_SIG_ME signature. Default (off) targets mainnet.
+testnet11 = []
 
 [dependencies]
 bencodex = { path = "bencodex" }

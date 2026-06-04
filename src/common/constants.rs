@@ -38,9 +38,20 @@ pub const DEFAULT_PUZZLE_HASH: [u8; 32] = [
     0x55, 0xcf, 0xdd, 0x10, 0xc3, 0xa6, 0x75, 0x7d, 0xe6, 0x18, 0xd2, 0x06, 0x12, 0xff, 0xfd, 0x52,
 ];
 
+// Genesis challenge baked into every AGG_SIG_ME signature. It is
+// network-specific: each Chia network uses its genesis challenge as the
+// agg_sig_me additional data. The default build targets mainnet; the
+// `testnet11` feature swaps in testnet11's value.
+#[cfg(not(feature = "testnet11"))]
 pub const AGG_SIG_ME_ADDITIONAL_DATA: [u8; 32] = [
     0xcc, 0xd5, 0xbb, 0x71, 0x18, 0x35, 0x32, 0xbf, 0xf2, 0x20, 0xba, 0x46, 0xc2, 0x68, 0x99, 0x1a,
     0x3f, 0xf0, 0x7e, 0xb3, 0x58, 0xe8, 0x25, 0x5a, 0x65, 0xc3, 0x0a, 0x2d, 0xce, 0x0e, 0x5f, 0xbb,
+];
+
+#[cfg(feature = "testnet11")]
+pub const AGG_SIG_ME_ADDITIONAL_DATA: [u8; 32] = [
+    0x37, 0xa9, 0x0e, 0xb5, 0x18, 0x5a, 0x9c, 0x44, 0x39, 0xa9, 0x1d, 0xdc, 0x98, 0xbb, 0xad, 0xce,
+    0x7b, 0x4f, 0xeb, 0xa0, 0x60, 0xd5, 0x01, 0x16, 0xa0, 0x67, 0xde, 0x66, 0xbf, 0x23, 0x66, 0x15,
 ];
 
 pub const ONE: [u8; 1] = [1];
@@ -49,3 +60,34 @@ pub const TWO: [u8; 1] = [2];
 pub const Q_KW: [u8; 1] = [1];
 pub const A_KW: [u8; 1] = [2];
 pub const C_KW: [u8; 1] = [4];
+
+#[cfg(test)]
+mod tests {
+    use super::AGG_SIG_ME_ADDITIONAL_DATA;
+
+    // Genesis challenges from chia-blockchain's network config
+    // (`agg_sig_me_additional_data == genesis_challenge` per network).
+    const MAINNET_GENESIS: &str =
+        "ccd5bb71183532bff220ba46c268991a3ff07eb358e8255a65c30a2dce0e5fbb";
+    const TESTNET11_GENESIS: &str =
+        "37a90eb5185a9c4439a91ddc98bbadce7b4feba060d50116a067de66bf236615";
+
+    #[test]
+    fn agg_sig_me_additional_data_matches_active_network() {
+        // If these ever coincided, a testnet build would silently sign for
+        // mainnet (and vice versa).
+        assert_ne!(MAINNET_GENESIS, TESTNET11_GENESIS);
+
+        let active = hex::encode(AGG_SIG_ME_ADDITIONAL_DATA);
+        #[cfg(feature = "testnet11")]
+        assert_eq!(
+            active, TESTNET11_GENESIS,
+            "testnet11 build must bake the testnet11 genesis challenge"
+        );
+        #[cfg(not(feature = "testnet11"))]
+        assert_eq!(
+            active, MAINNET_GENESIS,
+            "default build must bake the mainnet genesis challenge"
+        );
+    }
+}
