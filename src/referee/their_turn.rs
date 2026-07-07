@@ -62,6 +62,10 @@ pub struct TheirTurnReferee {
 
     pub state: Rc<TheirTurnRefereeGameState>,
     pub state_number: usize,
+    // Runtime-only ancestor chain (each move links the prior referee). Not
+    // serialized: it grows the serialized cradle to tens of MB in long games
+    // (e.g. battleship, ~139 deep). A deserialized game starts with parent = None.
+    #[serde(skip)]
     pub parent: Option<Rc<MyTurnReferee>>,
 }
 
